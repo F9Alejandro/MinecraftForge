@@ -20,8 +20,10 @@
 package net.minecraftforge.client;
 
 import static net.minecraftforge.client.event.RenderGameOverlayEvent.ElementType.BOSSINFO;
-import static net.minecraftforge.common.ForgeVersion.Status.BETA;
-import static net.minecraftforge.common.ForgeVersion.Status.BETA_OUTDATED;
+import static net.minecraftforge.fml.VersionChecker.Status.BETA;
+import static net.minecraftforge.fml.VersionChecker.Status.BETA_OUTDATED;
+import static org.lwjgl.opengl.GL11.*;
+import static org.lwjgl.opengl.GL20.*;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -29,6 +31,7 @@ import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 import javax.annotation.Nonnull;
 import javax.vecmath.Matrix3f;
@@ -38,6 +41,7 @@ import javax.vecmath.Vector4f;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.client.GameSettings;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.audio.ISound;
 import net.minecraft.client.audio.SoundHandler;
@@ -46,15 +50,12 @@ import net.minecraft.client.gui.BossInfoClient;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.GuiMainMenu;
 import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.client.model.ModelBiped;
 import net.minecraft.client.renderer.BlockRendererDispatcher;
 import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.EntityRenderer;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.RenderGlobal;
-import net.minecraft.client.renderer.RenderItem;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.block.model.BlockFaceUV;
 import net.minecraft.client.renderer.block.model.IBakedModel;
@@ -70,16 +71,13 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.client.renderer.texture.TextureMap;
 import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
-import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
 import net.minecraft.client.renderer.vertex.VertexFormat;
 import net.minecraft.client.renderer.vertex.VertexFormatElement;
 import net.minecraft.client.renderer.vertex.VertexFormatElement.EnumUsage;
 import net.minecraft.client.resources.FoliageColorReloadListener;
 import net.minecraft.client.resources.GrassColorReloadListener;
 import net.minecraft.client.resources.I18n;
-import net.minecraft.client.resources.IResourceManagerReloadListener;
 import net.minecraft.client.resources.LanguageManager;
-import net.minecraft.client.settings.GameSettings;
 import net.minecraft.client.util.SearchTreeManager;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
@@ -99,7 +97,6 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.util.registry.IRegistry;
 import net.minecraft.util.text.TextFormatting;
-import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 import net.minecraftforge.client.event.ColorHandlerEvent;
@@ -109,7 +106,6 @@ import net.minecraftforge.client.event.FOVUpdateEvent;
 import net.minecraftforge.client.event.GuiScreenEvent;
 import net.minecraftforge.client.event.InputUpdateEvent;
 import net.minecraftforge.client.event.ModelBakeEvent;
-import net.minecraftforge.client.event.MouseEvent;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.client.event.RenderHandEvent;
 import net.minecraftforge.client.event.RenderSpecificHandEvent;
@@ -123,34 +119,23 @@ import net.minecraftforge.client.model.animation.Animation;
 import net.minecraftforge.client.resource.IResourceType;
 import net.minecraftforge.client.resource.SelectiveReloadStateHandler;
 import net.minecraftforge.client.resource.VanillaResourceType;
-import net.minecraftforge.common.ForgeModContainer;
+import net.minecraftforge.common.ForgeMod;
 import net.minecraftforge.common.ForgeVersion;
-import net.minecraftforge.common.ForgeVersion.Status;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.model.IModelPart;
 import net.minecraftforge.common.model.ITransformation;
 import net.minecraftforge.common.model.TRSRTransformation;
-import net.minecraftforge.fml.client.FMLClientHandler;
+import net.minecraftforge.fml.VersionChecker;
 import net.minecraftforge.fml.client.registry.ClientRegistry;
-import net.minecraftforge.fml.common.FMLLog;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL20;
-
-import java.util.function.Predicate;
 
 import com.google.common.collect.Maps;
 
 public class ForgeHooksClient
 {
     //private static final ResourceLocation ITEM_GLINT = new ResourceLocation("textures/misc/enchanted_item_glint.png");
-
-    static TextureManager engine()
-    {
-        return FMLClientHandler.instance().getClient().renderEngine;
-    }
 
     public static String getArmorTexture(Entity entity, ItemStack armor, String _default, EntityEquipmentSlot slot, String type)
     {
@@ -167,7 +152,7 @@ public class ForgeHooksClient
 
         if (block != null && block.isBed(state, world, pos, entity))
         {
-            GL11.glRotatef((float)(block.getBedDirection(state, world, pos).getHorizontalIndex() * 90), 0.0F, 1.0F, 0.0F);
+            glRotatef((float)(block.getBedDirection(state, world, pos).getHorizontalIndex() * 90), 0.0F, 1.0F, 0.0F);
         }
     }
 
@@ -285,7 +270,7 @@ public class ForgeHooksClient
         skyInit = true;
 
         GameSettings settings = Minecraft.getMinecraft().gameSettings;
-        int[] ranges = ForgeModContainer.blendRanges;
+        int[] ranges = ForgeMod.blendRanges;
         int distance = 0;
         if (settings.fancyGraphics && ranges.length > 0)
         {
@@ -330,7 +315,7 @@ public class ForgeHooksClient
     private static int updatescrollcounter = 0;
     public static String renderMainMenu(GuiMainMenu gui, FontRenderer font, int width, int height, String splashText)
     {
-        Status status = ForgeVersion.getStatus();
+        VersionChecker.Status status = ForgeVersion.getStatus();
         if (status == BETA || status == BETA_OUTDATED)
         {
             // render a warning at the top of the screen,
@@ -400,6 +385,29 @@ public class ForgeHooksClient
         modelLoader.onPostBakeEvent(modelRegistry);
     }
 
+    @SuppressWarnings("deprecation")
+    public static Matrix4f getMatrix(net.minecraft.client.renderer.block.model.ItemTransformVec3f transform)
+    {
+        javax.vecmath.Matrix4f m = new javax.vecmath.Matrix4f(), t = new javax.vecmath.Matrix4f();
+        m.setIdentity();
+        m.setTranslation(TRSRTransformation.toVecmath(transform.translation));
+        t.setIdentity();
+        t.rotY(transform.rotation.func_195900_b());
+        m.mul(t);
+        t.setIdentity();
+        t.rotX(transform.rotation.func_195899_a());
+        m.mul(t);
+        t.setIdentity();
+        t.rotZ(transform.rotation.func_195902_c());
+        m.mul(t);
+        t.setIdentity();
+        t.m00 = transform.scale.func_195899_a();
+        t.m11 = transform.scale.func_195900_b();
+        t.m22 = transform.scale.func_195902_c();
+        m.mul(t);
+        return m;
+    }
+
     private static final Matrix4f flipX;
     static {
         flipX = new Matrix4f();
@@ -436,7 +444,7 @@ public class ForgeHooksClient
             matrixBuf.put(t);
         }
         matrixBuf.flip();
-        GL11.glMultMatrix(matrixBuf);
+        glMultMatrix(matrixBuf);
     }
 
     // moved and expanded from WorldVertexBufferUploader.draw
@@ -450,32 +458,32 @@ public class ForgeHooksClient
         switch(attrType)
         {
             case POSITION:
-                GlStateManager.glVertexPointer(count, constant, stride, buffer);
-                GlStateManager.glEnableClientState(GL11.GL_VERTEX_ARRAY);
+                glVertexPointer(count, constant, stride, buffer);
+                glEnableClientState(GL_VERTEX_ARRAY);
                 break;
             case NORMAL:
                 if(count != 3)
                 {
                     throw new IllegalArgumentException("Normal attribute should have the size 3: " + attr);
                 }
-                GlStateManager.glNormalPointer(constant, stride, buffer);
-                GlStateManager.glEnableClientState(GL11.GL_NORMAL_ARRAY);
+                glNormalPointer(constant, stride, buffer);
+                glEnableClientState(GL_NORMAL_ARRAY);
                 break;
             case COLOR:
-                GlStateManager.glColorPointer(count, constant, stride, buffer);
-                GlStateManager.glEnableClientState(GL11.GL_COLOR_ARRAY);
+                glColorPointer(count, constant, stride, buffer);
+                glEnableClientState(GL_COLOR_ARRAY);
                 break;
             case UV:
                 OpenGlHelper.setClientActiveTexture(OpenGlHelper.defaultTexUnit + attr.getIndex());
-                GlStateManager.glTexCoordPointer(count, constant, stride, buffer);
-                GlStateManager.glEnableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
+                glTexCoordPointer(count, constant, stride, buffer);
+                glEnableClientState(GL_TEXTURE_COORD_ARRAY);
                 OpenGlHelper.setClientActiveTexture(OpenGlHelper.defaultTexUnit);
                 break;
             case PADDING:
                 break;
             case GENERIC:
-                GL20.glEnableVertexAttribArray(attr.getIndex());
-                GL20.glVertexAttribPointer(attr.getIndex(), count, constant, false, stride, buffer);
+                glEnableVertexAttribArray(attr.getIndex());
+                glVertexAttribPointer(attr.getIndex(), count, constant, false, stride, buffer);
             default:
                 FMLLog.log.fatal("Unimplemented vanilla attribute upload: {}", attrType.getDisplayName());
         }
@@ -487,25 +495,25 @@ public class ForgeHooksClient
         switch(attrType)
         {
             case POSITION:
-                GlStateManager.glDisableClientState(GL11.GL_VERTEX_ARRAY);
+                glDisableClientState(GL_VERTEX_ARRAY);
                 break;
             case NORMAL:
-                GlStateManager.glDisableClientState(GL11.GL_NORMAL_ARRAY);
+                glDisableClientState(GL_NORMAL_ARRAY);
                 break;
             case COLOR:
-                GlStateManager.glDisableClientState(GL11.GL_COLOR_ARRAY);
+                glDisableClientState(GL_COLOR_ARRAY);
                 // is this really needed?
                 GlStateManager.resetColor();
                 break;
             case UV:
                 OpenGlHelper.setClientActiveTexture(OpenGlHelper.defaultTexUnit + attr.getIndex());
-                GlStateManager.glDisableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
+                glDisableClientState(GL_TEXTURE_COORD_ARRAY);
                 OpenGlHelper.setClientActiveTexture(OpenGlHelper.defaultTexUnit);
                 break;
             case PADDING:
                 break;
             case GENERIC:
-                GL20.glDisableVertexAttribArray(attr.getIndex());
+                glDisableVertexAttribArray(attr.getIndex());
             default:
                 FMLLog.log.fatal("Unimplemented vanilla attribute upload: {}", attrType.getDisplayName());
         }
@@ -568,15 +576,6 @@ public class ForgeHooksClient
                 r.render(null, 0, 0, 0, 0, -1, 0.0F);
             }
         }
-    }
-
-    /**
-     * @deprecated Will be removed as soon as possible.  See {@link Item#getTileEntityItemStackRenderer()}.
-     */
-    @Deprecated
-    public static void registerTESRItemStack(Item item, int metadata, Class<? extends TileEntity> TileClass)
-    {
-        tileItemMap.put(Pair.of(item, metadata), TileClass);
     }
 
     /**
@@ -742,9 +741,9 @@ public class ForgeHooksClient
     @SuppressWarnings("deprecation")
     public static Pair<? extends IBakedModel,Matrix4f> handlePerspective(IBakedModel model, ItemCameraTransforms.TransformType type)
     {
-        TRSRTransformation tr = TRSRTransformation.from(model.getItemCameraTransforms().getTransform(type));
+        TRSRTransformation tr = new TRSRTransformation(model.getItemCameraTransforms().getTransform(type));
         Matrix4f mat = null;
-        if (!tr.isIdentity()) mat = tr.getMatrix();
+        if(!tr.equals(TRSRTransformation.identity())) mat = tr.getMatrix();
         return Pair.of(model, mat);
     }
 

@@ -28,6 +28,7 @@ import net.minecraftforge.client.resource.VanillaResourceType;
 import org.lwjgl.opengl.GL11;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.EntityRenderer;
 import net.minecraft.client.renderer.GLAllocation;
@@ -54,7 +55,7 @@ public class CloudRenderer implements ISelectiveResourceReloadListener
 
     // Building constants.
     private static final VertexFormat FORMAT = DefaultVertexFormats.POSITION_TEX_COLOR;
-    private static final int TOP_SECTIONS = 12;	// Number of slices a top face will span.
+    private static final int TOP_SECTIONS = 12;    // Number of slices a top face will span.
     private static final int HEIGHT = 4;
     private static final float INSET = 0.001F;
     private static final float ALPHA = 0.8F;
@@ -270,7 +271,7 @@ public class CloudRenderer implements ISelectiveResourceReloadListener
 
     public void checkSettings()
     {
-        boolean newEnabled = ForgeModContainer.forgeCloudsEnabled
+        boolean newEnabled = ForgeMod.forgeCloudsEnabled
                 && mc.gameSettings.shouldRenderClouds() != 0
                 && mc.world != null
                 && mc.world.provider.isSurfaceWorld();
@@ -379,7 +380,7 @@ public class CloudRenderer implements ISelectiveResourceReloadListener
         {
             vbo.bindBuffer();
 
-            int stride = FORMAT.getNextOffset();
+            int stride = FORMAT.getSize();
             GlStateManager.glVertexPointer(3, GL11.GL_FLOAT, stride, 0);
             GlStateManager.glEnableClientState(GL11.GL_VERTEX_ARRAY);
             GlStateManager.glTexCoordPointer(2, GL11.GL_FLOAT, stride, 12);
@@ -389,9 +390,9 @@ public class CloudRenderer implements ISelectiveResourceReloadListener
         }
         else
         {
-            buffer.limit(FORMAT.getNextOffset());
+            buffer.limit(FORMAT.getSize());
             for (int i = 0; i < FORMAT.getElementCount(); i++)
-                FORMAT.getElements().get(i).getUsage().preDraw(FORMAT, i, FORMAT.getNextOffset(), buffer);
+                FORMAT.getElements().get(i).getUsage().preDraw(FORMAT, i, FORMAT.getSize(), buffer);
             buffer.position(0);
         }
 
@@ -450,7 +451,7 @@ public class CloudRenderer implements ISelectiveResourceReloadListener
 
         buffer.limit(0);
         for (int i = 0; i < FORMAT.getElementCount(); i++)
-            FORMAT.getElements().get(i).getUsage().postDraw(FORMAT, i, FORMAT.getNextOffset(), buffer);
+            FORMAT.getElements().get(i).getUsage().postDraw(FORMAT, i, FORMAT.getSize(), buffer);
         buffer.position(0);
 
         // Disable our coloring.
@@ -489,4 +490,29 @@ public class CloudRenderer implements ISelectiveResourceReloadListener
             reloadTextures();
         }
     }
+
+    private static CloudRenderer cloudRenderer;
+    private static CloudRenderer getCloudRenderer()
+    {
+        if (cloudRenderer == null)
+            cloudRenderer = new CloudRenderer();
+        return cloudRenderer;
+    }
+
+    public static void updateCloudSettings()
+    {
+        getCloudRenderer().checkSettings();
+    }
+
+    public static boolean renderClouds(int cloudTicks, float partialTicks, WorldClient world, Minecraft client)
+    {
+        IRenderHandler renderer = world.provider.getCloudRenderer();
+        if (renderer != null)
+        {
+            renderer.render(partialTicks, world, client);
+            return true;
+        }
+        return getCloudRenderer().render(cloudTicks, partialTicks);
+    }
+
 }

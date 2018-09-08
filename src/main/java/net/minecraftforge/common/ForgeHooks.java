@@ -24,13 +24,16 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -114,7 +117,6 @@ import net.minecraft.world.storage.loot.LootEntry;
 import net.minecraft.world.storage.loot.LootTable;
 import net.minecraft.world.storage.loot.LootTableManager;
 import net.minecraft.world.storage.loot.conditions.LootCondition;
-import net.minecraftforge.common.crafting.CraftingHelper;
 import net.minecraftforge.common.util.BlockSnapshot;
 import net.minecraftforge.event.AnvilUpdateEvent;
 import net.minecraftforge.event.DifficultyChangeEvent;
@@ -142,15 +144,18 @@ import net.minecraftforge.event.entity.player.AdvancementEvent;
 import net.minecraftforge.event.world.BlockEvent;
 import net.minecraftforge.event.world.NoteBlockEvent;
 import net.minecraftforge.fluids.IFluidBlock;
-import net.minecraftforge.fml.common.FMLLog;
 import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.common.LoaderState;
-import net.minecraftforge.fml.common.ModContainer;
-import net.minecraftforge.fml.common.eventhandler.Event;
+import net.minecraftforge.fml.ModContainer;
 import net.minecraftforge.fml.common.network.handshake.NetworkDispatcher;
 import net.minecraftforge.fml.common.network.handshake.NetworkDispatcher.ConnectionType;
-import net.minecraftforge.fml.common.registry.ForgeRegistries;
+import net.minecraftforge.fml.ModList;
+import net.minecraftforge.fml.network.ConnectionType;
+import net.minecraftforge.fml.loading.moddiscovery.ModFile;
+import net.minecraftforge.fml.loading.moddiscovery.ModFileInfo;
+import net.minecraftforge.fml.network.NetworkHooks;
 import net.minecraftforge.fml.relauncher.ReflectionHelper;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.IForgeRegistry;
 import net.minecraftforge.registries.RegistryManager;
 
@@ -158,10 +163,15 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.io.IOUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.Marker;
+import org.apache.logging.log4j.MarkerManager;
 
 public class ForgeHooks
 {
+    private static final Logger LOGGER = LogManager.getLogger();
+    private static final Marker FORGEHOOKS = MarkerManager.getMarker("FORGEHOOKS");
     //TODO: Loot tables?
     static class SeedEntry extends WeightedRandom.Item
     {
@@ -646,7 +656,7 @@ public class ForgeHooks
     {
         boolean isSpectator = (entity instanceof EntityPlayer && ((EntityPlayer)entity).isSpectator());
         if (isSpectator) return false;
-        if (!ForgeModContainer.fullBoundingBoxLadders)
+        if (!ForgeMod.fullBoundingBoxLadders)
         {
             return state.getBlock().isLadder(state, world, pos, entity);
         }
@@ -1279,7 +1289,7 @@ public class ForgeHooks
     {
         BlockEvent ev = new BlockEvent.CropGrowEvent.Pre(worldIn,pos,state);
         MinecraftForge.EVENT_BUS.post(ev);
-        return (ev.getResult() == Event.Result.ALLOW || (ev.getResult() == Event.Result.DEFAULT && def));
+        return (ev.getResult() == net.minecraftforge.eventbus.api.Event.Result.ALLOW || (ev.getResult() == net.minecraftforge.eventbus.api.Event.Result.DEFAULT && def));
     }
 
     public static void onCropsGrowPost(World worldIn, BlockPos pos, IBlockState state, IBlockState blockState)
@@ -1305,13 +1315,10 @@ public class ForgeHooks
     public static boolean loadAdvancements(Map<ResourceLocation, Advancement.Builder> map)
     {
         boolean errored = false;
-        setActiveModContainer(null);
-        //Loader.instance().getActiveModList().forEach((mod) -> loadFactories(mod));
-        for (ModContainer mod : Loader.instance().getActiveModList())
+        for (ModFileInfo mod : ModList.get().getModFiles())
         {
-            errored |= !loadAdvancements(map, mod);
+            errored |= !loadAdvancements(map, mod.getFile());
         }
-        setActiveModContainer(null);
         return errored;
     }
 
@@ -1320,14 +1327,14 @@ public class ForgeHooks
     {
         CriticalHitEvent hitResult = new CriticalHitEvent(player, target, damageModifier, vanillaCritical);
         MinecraftForge.EVENT_BUS.post(hitResult);
-        if (hitResult.getResult() == Event.Result.ALLOW || (vanillaCritical && hitResult.getResult() == Event.Result.DEFAULT))
+        if (hitResult.getResult() == net.minecraftforge.eventbus.api.Event.Result.ALLOW || (vanillaCritical && hitResult.getResult() == net.minecraftforge.eventbus.api.Event.Result.DEFAULT))
         {
             return hitResult;
         }
         return null;
     }
 
-    private static void setActiveModContainer(ModContainer mod)
+    private static boolean loadAdvancements(Map<ResourceLocation, Advancement.Builder> map, ModFile mod)
     {
         if (Loader.instance().getLoaderState() != LoaderState.NOINIT) //Unit Tests..
             Loader.instance().setActiveModContainer(mod);
@@ -1358,12 +1365,12 @@ public class ForgeHooks
                     }
                     catch (JsonParseException jsonparseexception)
                     {
-                        FMLLog.log.error("Parsing error loading built-in advancement " + key, (Throwable)jsonparseexception);
+                        LOGGER.error("Parsing error loading built-in advancement " + key, (Throwable)jsonparseexception);
                         return false;
                     }
                     catch (IOException ioexception)
                     {
-                        FMLLog.log.error("Couldn't read advancement " + key + " from " + file, (Throwable)ioexception);
+                        LOGGER.error("Couldn't read advancement " + key + " from " + file, (Throwable)ioexception);
                         return false;
                     }
                     finally
@@ -1386,13 +1393,11 @@ public class ForgeHooks
         if (type == ConnectionType.VANILLA)
         {
             IForgeRegistry<IRecipe> vanilla = RegistryManager.VANILLA.getRegistry(IRecipe.class);
-            if (recipes.size() > 0)
-                recipes = recipes.stream().filter(e -> vanilla.containsValue(e)).collect(Collectors.toList());
-            if (display.size() > 0)
-                display = display.stream().filter(e -> vanilla.containsValue(e)).collect(Collectors.toList());
+            recipes = recipes.stream().filter(vanilla::containsValue).collect(Collectors.toList());
+            display = display.stream().filter(vanilla::containsValue).collect(Collectors.toList());
         }
 
-        if (recipes.size() > 0 || display.size() > 0)
+        if (!recipes.isEmpty() || !display.isEmpty())
             connection.sendPacket(new SPacketRecipeBook(state, recipes, display, isGuiOpen, isFilteringCraftable));
     }
 
